@@ -11,19 +11,10 @@
 <body class="bg-gray-100 flex flex-col min-h-screen">
 
   <!-- HEADER -->
-  <header class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 flex justify-between items-center shadow-md relative">
+  <header class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-4 flex justify-between items-center shadow-md">
     <div class="flex items-center space-x-2">
       <img src="https://cdn-icons-png.flaticon.com/512/1041/1041882.png" alt="Logo" class="w-8 h-8">
       <span class="font-bold text-lg">Asset Manager</span>
-    </div>
-    <div class="relative">
-      <img src="https://i.pravatar.cc/40" alt="User" 
-           class="w-10 h-10 rounded-full border-2 border-white shadow cursor-pointer"
-           onclick="toggleUserMenu()">
-      <div id="user-menu" class="hidden absolute right-0 mt-2 bg-white text-gray-700 shadow rounded-lg w-40">
-        <a href="#" class="block px-4 py-2 hover:bg-gray-100">👤 Tài khoản</a>
-        <a href="#" onclick="logout()" class="block px-4 py-2 hover:bg-gray-100 text-red-500">🚪 Thoát</a>
-      </div>
     </div>
   </header>
 
@@ -32,15 +23,31 @@
     <!-- TAB SCANNER -->
     <section id="tab-scan" class="tab text-center">
       <h2 class="text-xl font-bold mb-4 text-indigo-600">📷 Quét mã QR</h2>
-      <div class="flex justify-center">
+
+      <div class="flex justify-center relative">
         <div id="reader" class="rounded-2xl overflow-hidden shadow-lg"
              style="width:100%; max-width:400px; height:320px;"></div>
+
+        <!-- Overlay iOS style -->
+        <div class="absolute top-0 left-0 w-full h-full flex items-center justify-center pointer-events-none">
+          <div class="relative w-64 h-64">
+            <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+            <div class="absolute inset-0 m-auto w-60 h-60 border-4 border-white rounded-lg"
+                 style="box-shadow: 0 0 0 100vmax rgba(0,0,0,0.6);"></div>
+          </div>
+        </div>
       </div>
+
       <div id="scan-result" class="mt-4 text-center text-gray-700"></div>
-      <div class="mt-4">
+
+      <div class="mt-4 flex justify-center space-x-4">
         <button onclick="startScanner()" 
           class="px-6 py-3 bg-indigo-600 text-white rounded-xl shadow hover:bg-indigo-700">
-          Bắt đầu quét
+          ▶️ Bắt đầu quét
+        </button>
+        <button onclick="stopScanner()" 
+          class="px-6 py-3 bg-red-500 text-white rounded-xl shadow hover:bg-red-600">
+          ⏹ Ngừng quét
         </button>
       </div>
     </section>
@@ -51,7 +58,6 @@
       <input id="search" type="text" placeholder="🔍 Tìm kiếm thiết bị..."
              class="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring-2 focus:ring-indigo-400 mb-4">
 
-      <!-- Thống kê -->
       <div class="grid grid-cols-2 gap-4 mb-4">
         <div id="stats" class="col-span-2 grid grid-cols-2 gap-4"></div>
         <div class="bg-green-100 p-3 rounded-xl shadow text-center col-span-2 cursor-pointer hover:bg-green-200"
@@ -61,7 +67,6 @@
         </div>
       </div>
 
-      <!-- Danh sách -->
       <div id="inventory-list" class="space-y-4"></div>
     </section>
 
@@ -97,34 +102,24 @@
   </nav>
 
   <script>
-    let qrScanner;
+    let qrScanner = null;
     let assets = [
       { qr: "LAP12345", name: "Laptop Dell XPS 13", dept: "IT", status: "Hoạt động", note: "Phòng IT-101", scanned: false },
       { qr: "PRN23456", name: "Máy in Canon LBP2900", dept: "Văn phòng", status: "Hỏng", note: "Phòng văn phòng", scanned: false },
       { qr: "MON33333", name: "Màn hình Samsung 24\"", dept: "IT", status: "Hoạt động", note: "Kho IT", scanned: false }
     ];
 
-    function toggleUserMenu() {
-      document.getElementById("user-menu").classList.toggle("hidden");
-    }
-
-    function logout() {
-      alert("🚪 Đã thoát khỏi hệ thống!");
-      // Có thể redirect về login.html
-    }
-
     function showTab(tabId) {
       document.querySelectorAll(".tab").forEach(tab => tab.classList.add("hidden"));
       document.getElementById(tabId).classList.remove("hidden");
-
-      document.querySelectorAll(".nav-btn").forEach(btn => btn.classList.remove("text-indigo-600"));
-      event.currentTarget.classList.add("text-indigo-600");
-
       if (tabId === "tab-inventory") renderInventory();
     }
 
-    function startScanner() {
-      if (qrScanner) qrScanner.stop().catch(() => {});
+    async function startScanner() {
+      if (qrScanner) {
+        await qrScanner.stop().catch(()=>{});
+        await qrScanner.clear().catch(()=>{});
+      }
       qrScanner = new Html5Qrcode("reader");
       qrScanner.start(
         { facingMode: "environment" },
@@ -134,20 +129,29 @@
           const item = assets.find(a => a.qr === qrCodeMessage);
           if (item) {
             item.scanned = true;
-            alert("🎉 Đã quét: " + item.name);
             renderInventory();
+            alert("🎉 Đã quét: " + item.name);
           } else {
             alert("⚠️ QR không khớp thiết bị nào!");
           }
-          qrScanner.stop();
+          stopScanner();
         }
       ).catch(err => {
         document.getElementById("scan-result").innerText = "❌ Lỗi: " + err;
       });
     }
 
+    async function stopScanner() {
+      if (qrScanner) {
+        await qrScanner.stop().catch(()=>{});
+        await qrScanner.clear().catch(()=>{});
+        qrScanner = null;
+        document.getElementById("scan-result").innerText = "⏹ Đã ngừng quét";
+      }
+    }
+
     function renderInventory() {
-      const searchVal = document.getElementById("search").value.toLowerCase();
+      const searchVal = document.getElementById("search").value?.toLowerCase() || "";
       const filtered = assets.filter(a =>
         a.name.toLowerCase().includes(searchVal) ||
         a.qr.toLowerCase().includes(searchVal) ||
