@@ -292,5 +292,6 @@
   "inv_round_status_none_desc": "今月は棚卸ラウンドが実施されていません。",
   "inv_round_status_ended_title": "棚卸ラウンドが終了しました",
   "inv_round_status_ended_desc": "今月の棚卸ラウンドはすべて完了または一時停止されました。",
-  "management": "管理"
+  "management": "管理",
+  "account_locked": "あなたのアカウントはロックされています。ITサポートにお問い合わせください。"
 }

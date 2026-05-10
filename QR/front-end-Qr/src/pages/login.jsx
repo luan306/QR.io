@@ -27,7 +27,7 @@ export default function Login() {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-600 to-purple-600">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-[#079DD9] to-[#0589c0]">
         <div className="text-white text-sm animate-pulse">
           {t("checking")}
         </div>
@@ -47,6 +47,8 @@ export default function Login() {
       const data = await res.json();
       if (data?.success) {
         navigate('/scan', { replace: true });
+      } else if (data?.locked) {
+        setError(t("account_locked"));
       } else {
         setError(data?.message || t("login_error"));
       }
@@ -56,7 +58,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#079DD9] to-[#0589c0] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
         <div className="flex flex-col items-center mb-6">
           <img
@@ -64,7 +66,7 @@ export default function Login() {
             className="w-32 h-32 object-contain rounded-2xl shadow-lg"
             alt="logo"
           />
-          <h1 className="text-2xl font-bold text-indigo-700">SMC - IT Equipment Inventory</h1>
+          <h1 className="text-2xl font-bold text-[#079DD9]">SMC - IT Equipment Inventory</h1>
           <p className="text-sm text-gray-500">
             {t("app_description")}
           </p>
@@ -77,7 +79,7 @@ export default function Login() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
-            className="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring-2 focus:ring-[#079DD9]"
           />
           <input
             type="password"
@@ -85,12 +87,17 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full p-3 rounded-xl border shadow focus:outline-none focus:ring-2 focus:ring-[#079DD9]"
           />
-          {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+          {error && (
+            <div className={'text-sm text-center rounded-xl px-3 py-2 ' + (error === t('account_locked') ? 'bg-red-50 border border-red-200 text-red-700 font-medium' : 'text-red-500')}>
+              {error === t('account_locked') && <div className="text-2xl mb-1">🔒</div>}
+              {error}
+            </div>
+          )}
           <button
             type="submit"
-            className="w-full bg-indigo-600 text-white p-3 rounded-xl shadow hover:bg-indigo-700 font-semibold"
+            className="w-full bg-[#079DD9] text-white p-3 rounded-xl shadow hover:bg-[#0589c0] font-semibold"
           >
             {t("login")}
           </button>
@@ -104,7 +111,7 @@ export default function Login() {
               onClick={() => i18n.changeLanguage(lng)}
               className={`px-3 py-1 rounded-full transition ${
                 i18n.language === lng
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-[#079DD9] text-white"
                   : "text-gray-600"
               }`}
             >

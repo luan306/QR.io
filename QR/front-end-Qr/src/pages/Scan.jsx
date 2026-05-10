@@ -339,8 +339,8 @@ export default function Scan() {
             )}
 
             <div className="mt-4 flex justify-center space-x-3">
-              <button onClick={startScanner} disabled={scanning}  className="px-6 py-3 bg-indigo-600 text-white rounded-xl shadow hover:bg-indigo-700 disabled:opacity-50">{t("start_scanning")}</button>
-              <button onClick={stopScanner}  disabled={!scanning} className="px-6 py-3 bg-red-500 text-white rounded-xl shadow hover:bg-red-600 disabled:opacity-50">{t("stop_scanning")}</button>
+              <button onClick={startScanner} disabled={scanning}  className="px-6 py-3 bg-[#079DD9] hover:bg-[#0589c0] text-white rounded-xl shadow disabled:opacity-50 transition-colors">{t("start_scanning")}</button>
+              <button onClick={stopScanner}  disabled={!scanning} className="px-6 py-3 bg-[#F24444] hover:bg-[#d93a3a] text-white rounded-xl shadow disabled:opacity-50 transition-colors">{t("stop_scanning")}</button>
             </div>
           </>
         )}

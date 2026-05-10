@@ -858,3 +858,11 @@ ALTER TABLE cost_centers ADD CONSTRAINT fk_cost_centers_group
 -- 4. Thêm 2 cột mới
 ALTER TABLE cost_centers ADD COLUMN section_id INT NULL AFTER group_id;
 ALTER TABLE cost_centers ADD COLUMN department_id INT NULL AFTER section_id;
+
+
+
+ALTER TABLE users
+  ADD COLUMN login_attempts  TINYINT  NOT NULL DEFAULT 0  AFTER role,
+  ADD COLUMN locked_at       DATETIME NULL               AFTER login_attempts;
+ 
+ALTER TABLE users ADD INDEX idx_users_locked (locked_at);

@@ -253,7 +253,7 @@ export default function Audit() {
       <Header currentUser={currentUser} />
 
       <main className="flex-1 p-4 pb-20 overflow-auto">
-        <h2 className="text-xl font-bold mb-4 text-indigo-600">🧾 {t('audit_assets')}</h2>
+        <h2 className="text-xl font-bold mb-4 text-[#079DD9]">🧾 {t('audit_assets')}</h2>
 
         {/* Banner khi không có round */}
         <RoundStatusBanner roundStatus={roundStatus} />
@@ -269,12 +269,12 @@ export default function Audit() {
 
         {/* Banner phiên audit đang chạy */}
         {running && (
-          <div className="mb-3 bg-indigo-50 border border-indigo-300 rounded-xl p-3">
+          <div className="mb-3 bg-[#e8f6fd] border border-[#079DD9]/30 rounded-xl p-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse inline-block" />
-                <span className="text-sm font-semibold text-indigo-700">{t('audit_in_progress')}:</span>
-                <span className="text-sm font-bold text-indigo-900">{auditDeptName}</span>
+                <span className="text-sm font-semibold text-[#0589c0]">{t('audit_in_progress')}:</span>
+                <span className="text-sm font-bold text-[#0589c0]">{auditDeptName}</span>
               </div>
               <span className="text-xs text-gray-400">{sessionTime}</span>
             </div>
@@ -303,14 +303,14 @@ export default function Audit() {
             <button
               onClick={handleStart}
               disabled={running || !selectedDept || loading || roundBlocked}
-              className="flex-1 bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+              className="flex-1 bg-[#079DD9] hover:bg-[#0589c0] text-white p-3 rounded-xl disabled:opacity-50 transition-colors"
             >
               {loading ? `⏳ ${t('inv_loading')}` : `▶️ ${t('start_audit')}`}
             </button>
             <button
               onClick={handleStop}
               disabled={!running}
-              className="flex-1 bg-red-500 text-white p-3 rounded-xl hover:bg-red-600 disabled:opacity-50"
+              className="flex-1 bg-[#F24444] hover:bg-[#d93a3a] text-white p-3 rounded-xl disabled:opacity-50 transition-colors"
             >
               ⏹ {t('stop_audit')}
             </button>
@@ -319,8 +319,8 @@ export default function Audit() {
 
         {/* Loading */}
         {loading && (
-          <div className="mt-6 flex flex-col items-center justify-center py-10 text-indigo-500">
-            <div className="w-8 h-8 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-3" />
+          <div className="mt-6 flex flex-col items-center justify-center py-10 text-[#079DD9]">
+            <div className="w-8 h-8 border-4 border-[#079DD9] border-t-transparent rounded-full animate-spin mb-3" />
             <p className="text-sm">{t('inv_loading_devices')}</p>
           </div>
         )}
@@ -351,7 +351,7 @@ export default function Audit() {
             {/* Progress */}
             <div className="mt-3">
               <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className="bg-indigo-500 h-3 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                <div className="bg-[#079DD9] h-3 rounded-full transition-all duration-500" style={{ width: `${progressPct}%` }} />
               </div>
               <div className="text-xs text-gray-400 text-right mt-1">{progressPct}% {t('audit_match').toLowerCase()} ({matchCount}/{compareData.length})</div>
             </div>
@@ -359,7 +359,7 @@ export default function Audit() {
             {/* Tabs */}
             <div className="flex rounded-xl overflow-hidden border border-gray-200 mt-3 text-xs">
               {[
-                { key: 'all',        label: `${t('all')} (${compareData.length})`, color: 'bg-indigo-600' },
+                { key: 'all',        label: `${t('all')} (${compareData.length})`, color: 'bg-[#079DD9]' },
                 { key: 'match',      label: `✅ ${matchCount}`,                    color: 'bg-green-500'  },
                 { key: 'user_only',  label: `❌ ${userOnlyCount}`,                 color: 'bg-red-500'    },
                 { key: 'audit_only', label: `⚠️ ${auditOnlyCount}`,                color: 'bg-yellow-500' },
@@ -392,11 +392,11 @@ export default function Audit() {
                           <span className={`text-xs px-2 py-0.5 rounded-full ${d.userDone ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
                             👤 {t('user')}: {d.userDone ? t('scanned') : t('not_scanned')}
                           </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${d.auditDone ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${d.auditDone ? 'bg-[#e8f6fd] text-[#0589c0]' : 'bg-gray-100 text-gray-400'}`}>
                             🔍 {t('audit')}: {d.auditDone ? t('audited') : t('not_audited')}
                           </span>
                           {d.auditDone && d.auditInfo?.scanned_by && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-500">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[#e8f6fd] text-[#0589c0]">
                               by {d.auditInfo.scanned_by}
                               {d.auditInfo.scanned_at && ` · ${new Date(d.auditInfo.scanned_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`}
                             </span>
@@ -427,10 +427,10 @@ export default function Audit() {
               <div className="text-4xl mb-2">👥</div>
               <h3 className="text-lg font-bold text-gray-800">{t('audit_session_active')}</h3>
             </div>
-            <div className="bg-indigo-50 rounded-xl p-3 space-y-1 text-sm">
+            <div className="bg-[#e8f6fd] rounded-xl p-3 space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-500">{t('auditor_name')}:</span>
-                <span className="font-semibold text-indigo-700">{resumeInfo.auditorName}</span>
+                <span className="font-semibold text-[#0589c0]">{resumeInfo.auditorName}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">{t('scanned')}:</span>
@@ -450,7 +450,7 @@ export default function Audit() {
                 {t('cancel')}
               </button>
               <button onClick={handleJoinExisting}
-                className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700">
+                className="flex-1 py-3 rounded-xl bg-[#079DD9] text-white font-medium hover:bg-[#0589c0]">
                 {t('audit_join_btn')}
               </button>
             </div>

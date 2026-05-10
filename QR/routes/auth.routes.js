@@ -1,128 +1,109 @@
 import express from "express";
-import bcrypt from "bcrypt";
+import bcrypt  from "bcrypt";
 import { query } from "../config/database.js";
 
 const router = express.Router();
 
-router.get("/logout", (req, res) => {
-  req.session.destroy(() => res.json({ success: true }));
-});
+const MAX_ATTEMPTS = 5;
 
+/* POST /api/login */
 router.post("/login", async (req, res) => {
   const { username, password } = req.body;
+  if (!username || !password)
+    return res.status(400).json({ success: false, message: "Thiếu username hoặc password" });
 
-  const rows = await query(`
-    SELECT
-      u.id,
-      u.username,
-      u.password,
-      u.full_name,
-      u.role,
-      u.department_id,
-      u.section_id,
-      u.group_id,
-      u.cost_center_id,
-      dep.name  AS department_name,
-      sec.name  AS section_name,
-      grp.name  AS group_name,
-      cc.name   AS cost_center_name
-    FROM users u
-    LEFT JOIN departments  dep ON dep.id = u.department_id
-    LEFT JOIN sections     sec ON sec.id = u.section_id
-    LEFT JOIN \`groups\`   grp ON grp.id = u.group_id
-    LEFT JOIN cost_centers cc  ON cc.id  = u.cost_center_id
-    WHERE u.username = ?
-  `, [username]);
+  try {
+    const rows = await query(
+      "SELECT id, username, full_name, password, role, department_id, section_id, group_id, cost_center_id, login_attempts, locked_at FROM users WHERE username = ? LIMIT 1",
+      [username]
+    );
 
-  if (rows.length === 0) {
-    return res.json({ success: false, message: "Sai tài khoản" });
+    if (!rows.length)
+      return res.status(401).json({ success: false, message: "Sai tài khoản hoặc mật khẩu" });
+
+    const user = rows[0];
+
+    // ── Kiểm tra khoá ────────────────────────────────────────
+    if (user.locked_at)
+      return res.status(403).json({
+        success: false,
+        locked:  true,
+        message: "Tài khoản đã bị khoá do đăng nhập sai quá nhiều lần. Vui lòng liên hệ admin để mở lại.",
+      });
+
+    // ── Kiểm tra mật khẩu ────────────────────────────────────
+    const match = await bcrypt.compare(password, user.password);
+
+    if (!match) {
+      const attempts = (user.login_attempts || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        // Khoá tài khoản
+        await query(
+          "UPDATE users SET login_attempts = ?, locked_at = NOW() WHERE id = ?",
+          [attempts, user.id]
+        );
+        return res.status(403).json({
+          success: false,
+          locked:  true,
+          message: "Tài khoản đã bị khoá do đăng nhập sai 5 lần. Vui lòng liên hệ admin để mở lại.",
+        });
+      }
+      // Tăng số lần sai
+      await query("UPDATE users SET login_attempts = ? WHERE id = ?", [attempts, user.id]);
+      return res.status(401).json({
+        success:      false,
+        message:      `Sai mật khẩu. Còn ${MAX_ATTEMPTS - attempts} lần thử.`,
+        attemptsLeft: MAX_ATTEMPTS - attempts,
+      });
+    }
+
+    // ── Đăng nhập thành công — reset attempts ─────────────────
+    await query("UPDATE users SET login_attempts = 0, locked_at = NULL WHERE id = ?", [user.id]);
+
+    req.session.userId = user.id;
+    req.session.user   = {
+      id:             user.id,
+      username:       user.username,
+      full_name:      user.full_name,
+      role:           user.role,
+      department_id:  user.department_id,
+      section_id:     user.section_id,
+      group_id:       user.group_id,
+      cost_center_id: user.cost_center_id,
+    };
+
+    res.json({ success: true, user: req.session.user });
+
+  } catch (err) {
+    console.error("[Login] error:", err.message);
+    res.status(500).json({ success: false, message: "Lỗi server" });
   }
-
-  const user = rows[0];
-
-  const match = await bcrypt.compare(password, user.password);
-  if (!match) {
-    return res.json({ success: false, message: "Sai mật khẩu" });
-  }
-
-  req.session.user = {
-    id:               user.id,
-    username:         user.username,
-    full_name:        user.full_name        || '',
-    role:             user.role,
-    department_id:    user.department_id,
-    department_name:  user.department_name  || '',
-    section_id:       user.section_id       || null,
-    section_name:     user.section_name     || '',
-    group_id:         user.group_id         || null,
-    group_name:       user.group_name       || '',
-    cost_center_id:   user.cost_center_id   || null,
-    cost_center_name: user.cost_center_name || '',
-  };
-
-  return res.json({
-    success:  true,
-    redirect: user.role === "admin" ? "/admin" : "/index"
-  });
 });
 
+/* POST /api/logout */
 router.post("/logout", (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
+/* GET /api/current-user — luôn lấy từ DB để có role mới nhất */
 router.get("/current-user", async (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ success: false, message: "Chưa đăng nhập" });
-  }
-
+  if (!req.session?.userId) return res.status(401).json({ user: null });
   try {
-    const rows = await query(`
-      SELECT
-        u.id,
-        u.username,
-        u.full_name,
-        u.role,
-        u.department_id,
-        u.section_id,
-        u.group_id,
-        u.cost_center_id,
-        dep.name  AS department_name,
-        sec.name  AS section_name,
-        grp.name  AS group_name,
-        cc.name   AS cost_center_name
-      FROM users u
-      LEFT JOIN departments  dep ON dep.id = u.department_id
-      LEFT JOIN sections     sec ON sec.id = u.section_id
-      LEFT JOIN \`groups\`   grp ON grp.id = u.group_id
-      LEFT JOIN cost_centers cc  ON cc.id  = u.cost_center_id
-      WHERE u.id = ?
-    `, [req.session.user.id]);
-
-    if (rows.length > 0) {
-      const u = rows[0];
-      const user = {
-        id:               u.id,
-        username:         u.username,
-        full_name:        u.full_name        || '',
-        role:             u.role,
-        department_id:    u.department_id,
-        department_name:  u.department_name  || '',
-        section_id:       u.section_id       || null,
-        section_name:     u.section_name     || '',
-        group_id:         u.group_id         || null,
-        group_name:       u.group_name       || '',
-        cost_center_id:   u.cost_center_id   || null,
-        cost_center_name: u.cost_center_name || '',
-      };
-      req.session.user = user;
-      return res.json({ success: true, user });
-    }
+    const rows = await query(
+      `SELECT id, username, full_name, role, department_id, section_id, group_id, cost_center_id
+       FROM users WHERE id = ? LIMIT 1`,
+      [req.session.userId]
+    );
+    if (!rows.length) return res.status(401).json({ user: null });
+    const user = rows[0];
+    // Sync lại session
+    req.session.user = user;
+    res.json({ user });
   } catch (err) {
-    console.error("current-user error:", err);
+    // Fallback về session nếu DB lỗi
+    if (req.session?.user) return res.json({ user: req.session.user });
+    res.status(500).json({ user: null });
   }
-
-  // Fallback: trả session cũ nếu DB lỗi
-  res.json({ success: true, user: req.session.user });
 });
 
 export default router;

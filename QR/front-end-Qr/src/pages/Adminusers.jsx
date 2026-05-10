@@ -77,6 +77,14 @@ function Users() {
 
   const fetchUsers = async () => { setUsers(toArray(await fetch(API + '/users').then(r => r.json()).catch(() => []))); setSelected(new Set()); };
 
+  const unlockUser = async (id, name) => {
+    if (!confirm(`Mở khoá tài khoản "${name}"?`)) return;
+    const res  = await fetch(`${API}/users/${id}/unlock`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) { fetchUsers(); }
+    else alert(data.message || t('error'));
+  };
+
   const downloadUserTemplate = () => {
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([
@@ -204,6 +212,10 @@ function Users() {
 
   const toggleOne = (id) => setSelected(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleAll = () => selected.size === users.length ? setSelected(new Set()) : setSelected(new Set(users.map(u => u.id)));
+  const lockedBadge = (u) => u.locked_at
+    ? <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-600">🔒</span>
+    : null;
+
   const roleColor = r => r === 'admin' ? 'bg-red-100 text-red-700' : r === 'auditor' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600';
 
   return (
@@ -253,7 +265,7 @@ function Users() {
               {formCosts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
 
-            <button type="submit" className="sm:col-span-2 bg-[#079DD9] text-white p-3 rounded-lg text-sm font-medium hover:bg-[#079DD9]">✅ {t('create_user')}</button>
+            <button type="submit" className="sm:col-span-2 bg-[#079DD9] text-white p-3 rounded-lg text-sm font-medium hover:bg-[#0589c0] transition-colors">✅ {t('create_user')}</button>
           </form>
         </Card>
       )}
@@ -292,7 +304,7 @@ function Users() {
                 <div className="flex items-center gap-2 min-w-0">
                   <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)} className="shrink-0" />
                   <div className="min-w-0">
-                    <div className="font-medium text-sm text-gray-800 truncate">{u.full_name || u.username}</div>
+                    <div className="font-medium text-sm text-gray-800 truncate">{u.full_name || u.username}{lockedBadge(u)}</div>
                     <div className="text-xs text-gray-500">@{u.username}</div>
                     <div className="text-xs text-gray-500">{u.department_name || '—'}</div>
                   </div>
@@ -302,6 +314,7 @@ function Users() {
               <div className="flex gap-2 mt-2">
                 <Btn color="yellow" size="sm" onClick={() => setEditUser({...u, password: ''})}>✏️ {t('edit')}</Btn>
                 <Btn color="red"    size="sm" onClick={() => deleteUser(u.id)}>🗑️ {t('delete')}</Btn>
+                {u.locked_at && <Btn color="green" size="sm" onClick={() => unlockUser(u.id, u.username)}>🔓 {t('unlock')}</Btn>}
               </div>
             </div>
           ))}
@@ -320,6 +333,7 @@ function Users() {
               <th className="p-2 border">Group</th>
               <th className="p-2 border">Cost Center</th>
               <th className="p-2 border">{t('role')}</th>
+              <th className="p-2 border text-center">🔒</th>
               <th className="p-2 border">{t('action')}</th>
             </tr></thead>
             <tbody>
@@ -327,13 +341,18 @@ function Users() {
                 <tr key={u.id} className={'hover:bg-gray-50 ' + (selected.has(u.id) ? 'bg-red-50' : '')}>
                   <td className="border p-2 text-center"><input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)} /></td>
                   <td className="border p-2 text-center text-gray-400 text-xs">{idx + 1}</td>
-                  <td className="border p-2">{u.username}</td>
+                  <td className="border p-2">{u.username}{lockedBadge(u)}</td>
                   <td className="border p-2">{u.full_name}</td>
                   <td className="border p-2 text-xs">{u.department_name || '—'}</td>
                   <td className="border p-2 text-xs">{u.section_name    || '—'}</td>
                   <td className="border p-2 text-xs">{u.group_name      || '—'}</td>
                   <td className="border p-2 text-xs">{u.cost_center     || '—'}</td>
                   <td className="border p-2 text-center"><span className={'px-2 py-0.5 rounded-full text-xs font-medium ' + roleColor(u.role)}>{u.role}</span></td>
+                  <td className="border p-2 text-center">
+                    {u.locked_at
+                      ? <Btn color="green" size="sm" onClick={() => unlockUser(u.id, u.username)}>🔓 {t('unlock')}</Btn>
+                      : <span className="text-gray-300 text-xs">—</span>}
+                  </td>
                   <td className="border p-2 text-center space-x-1">
                     <Btn color="yellow" size="sm" onClick={() => setEditUser({...u, password: '', section_id: u.section_id || '', group_id: u.group_id || '', cost_center_id: u.cost_center_id || ''})}>✏️</Btn>
                     <Btn color="red"    size="sm" onClick={() => deleteUser(u.id)}>🗑️</Btn>
@@ -350,9 +369,9 @@ function Users() {
       {editUser && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-white rounded-t-2xl sm:rounded-xl w-full sm:max-w-sm shadow-xl p-6 space-y-3 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold">✏️ Chỉnh sửa User</h3>
-            <input value={editUser.full_name} onChange={e => setEditUser(u => ({...u, full_name: e.target.value}))} placeholder="Họ tên" className="w-full p-3 border rounded-lg text-sm" />
-            <input value={editUser.password}  onChange={e => setEditUser(u => ({...u, password: e.target.value}))}  placeholder="Mật khẩu mới (để trống = không đổi)" type="password" className="w-full p-3 border rounded-lg text-sm" />
+            <h3 className="text-lg font-bold">✏️ {t("edit_user")}</h3>
+            <input value={editUser.full_name} onChange={e => setEditUser(u => ({...u, full_name: e.target.value}))} placeholder={t("full_name")} className="w-full p-3 border rounded-lg text-sm" />
+            <input value={editUser.password}  onChange={e => setEditUser(u => ({...u, password: e.target.value}))}  placeholder={t("new_password_hint")} type="password" className="w-full p-3 border rounded-lg text-sm" />
 
             {/* Department */}
             <select value={editUser.department_id || ''} onChange={e => setEditUser(u => ({...u, department_id: e.target.value, section_id: '', group_id: '', cost_center_id: ''}))} className="w-full p-3 border rounded-lg text-sm">
@@ -386,8 +405,8 @@ function Users() {
             </select>
 
             <div className="flex gap-2 pt-1">
-              <Btn color="gray" onClick={() => setEditUser(null)} className="flex-1">Hủy</Btn>
-              <Btn color="indigo" onClick={saveEdit} className="flex-1">💾 Lưu</Btn>
+              <Btn color="gray" onClick={() => setEditUser(null)} className="flex-1">{t("cancel")}</Btn>
+              <Btn color="blue" onClick={saveEdit} className="flex-1">💾 {t("save_device")}</Btn>
             </div>
           </div>
         </div>

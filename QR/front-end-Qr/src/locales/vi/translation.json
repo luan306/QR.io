@@ -292,5 +292,6 @@
   "inv_round_status_none_desc": "Hiện tại chưa có đợt kiểm kê nào đang diễn ra trong tháng này.",
   "inv_round_status_ended_title": "Đợt kiểm kê đã kết thúc",
   "inv_round_status_ended_desc": "Tất cả đợt kiểm kê trong tháng này đã hoàn thành hoặc tạm dừng.",
-  "management": "Quản lý"
+  "management": "Quản lý",
+  "account_locked": "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ hỗ trợ IT."
 }

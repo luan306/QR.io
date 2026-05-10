@@ -292,5 +292,6 @@
   "inv_round_status_none_desc": "There is no inventory round running this month.",
   "inv_round_status_ended_title": "Inventory round ended",
   "inv_round_status_ended_desc": "All inventory rounds this month have been completed or paused.",
-  "management": "Management"
+  "management": "Management",
+  "account_locked": "Your account is locked. Please contact IT support."
 }

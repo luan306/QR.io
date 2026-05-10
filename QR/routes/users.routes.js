@@ -2,6 +2,7 @@ import express from "express";
 import bcrypt from "bcrypt";
 import { query, transaction } from "../config/database.js";
 import { checkAdmin } from "../middleware/admin.js";
+import redisClient from "../config/redis.js";
 
 const router = express.Router();
 
@@ -18,6 +19,8 @@ router.get("/", checkAdmin, async (req, res) => {
         u.section_id,
         u.group_id,
         u.cost_center_id,
+        u.login_attempts,
+        u.locked_at,
         dep.name AS department_name,
         sec.name AS section_name,
         grp.name AS group_name,
@@ -111,6 +114,32 @@ router.put("/:id", checkAdmin, async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: "User không tồn tại" });
     }
+
+    // ── Cập nhật session trong Redis ngay lập tức ─────────────
+    // User không cần logout/login lại mới có role mới
+    try {
+      const keys = await redisClient.keys("sess:*");
+      for (const key of keys) {
+        const raw = await redisClient.get(key);
+        if (!raw) continue;
+        const sess = JSON.parse(raw);
+        if (String(sess?.user?.id) === String(id)) {
+          sess.user.role           = role           || "user";
+          sess.user.full_name      = full_name      || sess.user.full_name;
+          sess.user.department_id  = department_id  || null;
+          sess.user.section_id     = section_id     || null;
+          sess.user.group_id       = group_id       || null;
+          sess.user.cost_center_id = cost_center_id || null;
+          const ttl = await redisClient.ttl(key);
+          await redisClient.setEx(key, ttl > 0 ? ttl : 28800, JSON.stringify(sess));
+          console.log(`[Users] Updated session for user ${id} → role: ${role}`);
+        }
+      }
+    } catch (redisErr) {
+      // Redis update thất bại không block response — user sẽ cần re-login
+      console.warn("[Users] Redis session update failed:", redisErr.message);
+    }
+
     res.json({ success: true, message: "Cập nhật user thành công" });
 
   } catch (err) {
@@ -133,6 +162,16 @@ router.delete("/:id", checkAdmin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+/* POST /api/users/:id/unlock — admin mở khoá */
+router.post("/:id/unlock", checkAdmin, async (req, res) => {
+  try {
+    await query("UPDATE users SET login_attempts = 0, locked_at = NULL WHERE id = ?", [req.params.id]);
+    res.json({ success: true, message: "Đã mở khoá tài khoản" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
