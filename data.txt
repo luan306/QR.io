@@ -1,0 +1,860 @@
+CREATE DATABASE inventory;
+USE inventory;
+
+-- Bảng user
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(100),
+    role VARCHAR(20) DEFAULT 'user', -- admin / user
+    department_id INT
+);
+select * from users
+-- Bảng bộ phận
+CREATE TABLE departments (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+-- Bảng thiết bị
+CREATE TABLE devices (
+    id SERIAL PRIMARY KEY,
+    qr_code VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(100),
+    location VARCHAR(100),
+    department_id INT REFERENCES departments(id),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Bảng lịch sử quét
+CREATE TABLE scans (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    device_id INT REFERENCES devices(id),
+    scanned_at TIMESTAMP DEFAULT NOW()
+);
+-- Thêm bộ phận
+INSERT INTO departments (name) VALUES ('IT'), ('Văn phòng');
+
+-- Thêm user admin (mật khẩu để tạm plain text, sau này hash bằng API)
+INSERT INTO users (username, password, full_name, role, department_id)
+VALUES ('admin', 'admin', 'Quản trị viên', 'admin', 1);
+
+-- Thêm vài thiết bị
+INSERT INTO devices (qr_code, name, location, department_id)
+VALUES 
+('6HHP6Z3', 'Laptop Dell XPS 13', 'Phòng IT-103', 3),
+('PRN23456', 'Máy in Canon LBP2900', 'Phòng văn phòng', 2);
+
+SELECT * FROM device_types;
+SELECT * FROM departments;
+SELECT * FROM devices;
+CREATE TABLE device_types (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL
+);
+
+INSERT INTO device_types (name) VALUES
+('Laptop Dell'),
+('PDA'),
+('ZD621"');
+
+
+CREATE TABLE departments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL
+);
+
+
+INSERT INTO departments (name) VALUES
+('IT'),
+('Văn phòng'),
+('Kế toán');
+
+
+ALTER TABLE devices 
+ADD COLUMN device_type_id INT REFERENCES device_types(id);
+
+ALTER TABLE devices ADD COLUMN device_type_id INT;
+ALTER TABLE devices ADD CONSTRAINT fk_device_type FOREIGN KEY (device_type_id) REFERENCES device_types(id);
+
+
+SELECT d.id, d.name, d.qr_code, d.device_type_id, dt.name AS device_type_name
+FROM devices d
+LEFT JOIN device_types dt ON d.device_type_id = dt.id
+LIMIT 10;
+
+select *from scans;
+SELECT 
+d.name,
+d.qr_code,
+u.full_name,
+s.scanned_at
+FROM scans s
+LEFT JOIN devices d ON d.id = s.device_id
+LEFT JOIN users u ON u.id = s.user_id;
+
+
+after table scans
+add column scan_deparment INT,
+add column scanned_at DATETIME DEFAULT CURRENT_TIMESTAMP;
+
+
+ALTER TABLE scans 
+ADD COLUMN scan_department INT;
+
+
+ALTER TABLE devices 
+ADD COLUMN original_department_id INT,
+ADD COLUMN current_department_id INT;
+
+SELECT * FROM devices;
+
+CREATE TABLE audit_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  department_id INT,
+  started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  ended_at DATETIME NULL
+);
+
+ALTER TABLE scans ADD COLUMN session_id INT;
+
+
+USE inventory;
+
+SET SQL_SAFE_UPDATES = 0;
+
+-- ============================================================
+-- BƯỚC 1: Thêm scan_department_id vào scans (nếu chưa có)
+-- ============================================================
+SET @exist = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'inventory'
+    AND TABLE_NAME   = 'scans'
+    AND COLUMN_NAME  = 'scan_department_id'
+);
+SET @sql = IF(@exist = 0,
+  'ALTER TABLE scans ADD COLUMN scan_department_id INT',
+  'SELECT "scan_department_id already exists" AS msg'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Đồng bộ dữ liệu cũ
+UPDATE scans SET scan_department_id = scan_department
+WHERE scan_department_id IS NULL AND scan_department IS NOT NULL;
+
+-- FK scan_department_id → departments (chỉ thêm nếu chưa có)
+SET @fk = (
+  SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA    = 'inventory'
+    AND TABLE_NAME      = 'scans'
+    AND CONSTRAINT_NAME = 'fk_scans_scan_dept'
+);
+SET @sql2 = IF(@fk = 0,
+  'ALTER TABLE scans ADD CONSTRAINT fk_scans_scan_dept FOREIGN KEY (scan_department_id) REFERENCES departments(id)',
+  'SELECT "fk_scans_scan_dept already exists" AS msg'
+);
+PREPARE stmt FROM @sql2; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ============================================================
+-- BƯỚC 2: Thêm created_at vào audit_sessions (nếu chưa có)
+-- ============================================================
+SET @exist2 = (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = 'inventory'
+    AND TABLE_NAME   = 'audit_sessions'
+    AND COLUMN_NAME  = 'created_at'
+);
+SET @sql3 = IF(@exist2 = 0,
+  'ALTER TABLE audit_sessions ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP',
+  'SELECT "created_at already exists" AS msg'
+);
+PREPARE stmt FROM @sql3; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- Đồng bộ dữ liệu cũ
+UPDATE audit_sessions SET created_at = started_at
+WHERE created_at IS NULL AND started_at IS NOT NULL;
+
+-- ============================================================
+-- BƯỚC 3: FK scans.session_id → audit_sessions (nếu chưa có)
+-- ============================================================
+SET @fk2 = (
+  SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA    = 'inventory'
+    AND TABLE_NAME      = 'scans'
+    AND CONSTRAINT_NAME = 'fk_scans_session'
+);
+SET @sql4 = IF(@fk2 = 0,
+  'ALTER TABLE scans ADD CONSTRAINT fk_scans_session FOREIGN KEY (session_id) REFERENCES audit_sessions(id)',
+  'SELECT "fk_scans_session already exists" AS msg'
+);
+PREPARE stmt FROM @sql4; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ============================================================
+-- BƯỚC 4: Đồng bộ devices.department_id từ original_department_id
+-- ============================================================
+UPDATE devices
+SET department_id = original_department_id
+WHERE department_id IS NULL AND original_department_id IS NOT NULL;
+
+-- ============================================================
+-- BƯỚC 5: Thêm role auditor + tài khoản mẫu
+-- ============================================================
+-- role là VARCHAR(20) nên không cần ALTER, INSERT thẳng được
+INSERT IGNORE INTO users (username, password, full_name, role, department_id)
+VALUES ('auditor', 'audit123', 'Kiểm kê viên', 'auditor', NULL);
+
+-- ============================================================
+-- KIỂM TRA
+-- ============================================================
+SET SQL_SAFE_UPDATES = 1;
+
+SELECT '== scans ==' AS '';        DESCRIBE scans;
+SELECT '== audit_sessions ==' AS ''; DESCRIBE audit_sessions;
+SELECT '== users ==' AS '';        SELECT id, username, role FROM users;
+
+DESCRIBE devices;
+
+
+
+
+-- Thêm cột vị trí vào devices
+ALTER TABLE devices
+  ADD COLUMN floor       TINYINT     NULL COMMENT '1 = Tầng 1, 2 = Tầng 2',
+  ADD COLUMN pos_x       FLOAT       NULL COMMENT 'Tọa độ X (% so với chiều rộng ảnh)',
+  ADD COLUMN pos_y       FLOAT       NULL COMMENT 'Tọa độ Y (% so với chiều cao ảnh)';
+
+-- Bảng lưu layout từng tầng
+CREATE TABLE floor_layouts (
+  id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  floor      TINYINT      NOT NULL UNIQUE COMMENT '1 = Tầng 1, 2 = Tầng 2',
+  image_url  VARCHAR(500) NOT NULL COMMENT 'Đường dẫn ảnh layout',
+  width      INT          NOT NULL DEFAULT 1000,
+  height     INT          NOT NULL DEFAULT 700,
+  updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Thêm 2 tầng mặc định
+INSERT INTO floor_layouts (floor, image_url) VALUES
+  (1, ''),
+  (2, '');
+
+-- Xóa bảng cũ nếu có
+DROP TABLE IF EXISTS department_layouts;
+
+CREATE TABLE department_layouts (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  department_id INT          NOT NULL,
+  floor         TINYINT      NOT NULL DEFAULT 1,
+  image_url     VARCHAR(500) NOT NULL DEFAULT '',
+  updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_dept_floor (department_id, floor)
+);
+-- Cột floor trong devices giữ nguyên, thêm layout_id để biết thuộc layout nào
+select * from department_layouts
+
+ALTER TABLE devices ADD COLUMN floor TINYINT NULL;
+ALTER TABLE devices ADD COLUMN pos_x FLOAT NULL;
+ALTER TABLE devices ADD COLUMN pos_y FLOAT NULL;
+
+
+-- Bảng nhà máy
+CREATE TABLE factories (
+  id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(100) NOT NULL,
+  created_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Thêm nhà máy mặc định
+INSERT INTO factories (name) VALUES ('Nhà máy 1');
+
+-- Gắn bộ phận với nhà máy
+ALTER TABLE departments ADD COLUMN factory_id INT UNSIGNED NULL;
+
+-- Cập nhật department_layouts thêm factory + nhà máy + khóa layout
+ALTER TABLE department_layouts
+  ADD COLUMN factory_id  INT UNSIGNED NOT NULL DEFAULT 1,
+  ADD COLUMN map_enabled TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Admin bật/tắt tính năng map cho bộ phận này',
+  ADD COLUMN locked      TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Khóa không cho user sửa vị trí';
+
+-- Thêm factory_id vào devices
+ALTER TABLE devices ADD COLUMN factory_id INT UNSIGNED NULL;
+
+
+SELECT * FROM department_layouts LIMIT 5;
+DESCRIBE department_layouts;
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS factories (
+  id   INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL
+);
+INSERT INTO factories (name) VALUES ('SMC 1');
+UPDATE department_layouts SET factory_id = 1 WHERE factory_id IS NULL OR factory_id = 0;
+
+SELECT * FROM departments LIMIT 10;
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS workshops (
+  id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  factory_id INT UNSIGNED NOT NULL,
+  name       VARCHAR(100) NOT NULL
+);
+ALTER TABLE department_layouts 
+ADD COLUMN workshop_id INT UNSIGNED NULL;
+ALTER TABLE department_layouts ADD COLUMN IF NOT EXISTS workshop_id INT UNSIGNED NULL;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS workshop_id INT UNSIGNED NULL;
+ALTER TABLE devices 
+ADD COLUMN workshop_id INT UNSIGNED NULL;
+-- Thêm xưởng mẫu cho SMC 1
+INSERT INTO workshops (factory_id, name) VALUES
+(1,'Xưởng 1'),(1,'Xưởng 2'),(1,'Xưởng 3'),
+(1,'Xưởng 4'),(1,'Xưởng 5'),(1,'Xưởng 6'),(1,'Xưởng 7');
+
+
+DESCRIBE department_layouts;
+
+ALTER TABLE department_layouts MODIFY COLUMN department_id INT NULL DEFAULT NULL;
+
+ALTER TABLE department_layouts
+DROP INDEX uq_dept_floor;
+
+ALTER TABLE department_layouts
+ADD UNIQUE KEY uq_workshop_floor (workshop_id, floor);
+
+DELETE FROM department_layouts
+WHERE department_id = 0 AND id > 0;
+
+-- //////////////////chưa làm
+CREATE TABLE device_position_history (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  device_id    INT UNSIGNED NOT NULL,
+  user_id      INT UNSIGNED NULL,
+  workshop_id  INT UNSIGNED NULL,
+  floor        TINYINT      NULL,
+  pos_x        FLOAT        NULL,
+  pos_y        FLOAT        NULL,
+  action       VARCHAR(20)  NOT NULL DEFAULT 'pin' COMMENT 'pin | move | remove',
+  changed_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  note         VARCHAR(255) NULL
+);
+
+
+
+ALTER TABLE devices ADD COLUMN is_new TINYINT(1) NOT NULL DEFAULT 0;
+DESCRIBE audit_sessions;
+
+DESCRIBE scans;
+SELECT * FROM scans WHERE session_id = 34;
+
+
+
+
+
+
+
+USE inventory;
+SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_SAFE_UPDATES   = 0;
+ 
+-- Xóa bảng cũ nếu đã tạo sai kiểu (từ bước trước)
+DROP TABLE IF EXISTS cost_centers;
+DROP TABLE IF EXISTS `groups`;
+DROP TABLE IF EXISTS sections;
+
+
+CREATE TABLE sections (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  department_id BIGINT UNSIGNED NOT NULL,
+  name          VARCHAR(100)    NOT NULL,
+  created_at    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_sections_department
+    FOREIGN KEY (department_id) REFERENCES departments(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE `groups` (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  section_id BIGINT UNSIGNED NOT NULL,
+  name       VARCHAR(100)    NOT NULL,
+  created_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_groups_section
+    FOREIGN KEY (section_id) REFERENCES sections(id)
+    ON DELETE CASCADE
+);
+
+CREATE TABLE cost_centers (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  group_id   BIGINT UNSIGNED NOT NULL,
+  name       VARCHAR(100)    NOT NULL,
+  created_at TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cost_centers_group
+    FOREIGN KEY (group_id) REFERENCES `groups`(id)
+    ON DELETE CASCADE
+);
+
+
+SET @c1 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND COLUMN_NAME='section_id');
+SET @s1 = IF(@c1=0,
+  'ALTER TABLE devices ADD COLUMN section_id BIGINT UNSIGNED NULL',
+  'SELECT "section_id exists"');
+PREPARE s FROM @s1; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+SET @c2 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND COLUMN_NAME='group_id');
+SET @s2 = IF(@c2=0,
+  'ALTER TABLE devices ADD COLUMN group_id BIGINT UNSIGNED NULL',
+  'SELECT "group_id exists"');
+PREPARE s FROM @s2; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+SET @c3 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND COLUMN_NAME='cost_center_id');
+SET @s3 = IF(@c3=0,
+  'ALTER TABLE devices ADD COLUMN cost_center_id BIGINT UNSIGNED NULL',
+  'SELECT "cost_center_id exists"');
+PREPARE s FROM @s3; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- FK devices → sections / groups / cost_centers
+SET @f1 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND CONSTRAINT_NAME='fk_devices_section');
+SET @s4 = IF(@f1=0,
+  'ALTER TABLE devices ADD CONSTRAINT fk_devices_section FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE SET NULL',
+  'SELECT "fk_devices_section exists"');
+PREPARE s FROM @s4; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+SET @f2 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND CONSTRAINT_NAME='fk_devices_group');
+SET @s5 = IF(@f2=0,
+  'ALTER TABLE devices ADD CONSTRAINT fk_devices_group FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE SET NULL',
+  'SELECT "fk_devices_group exists"');
+PREPARE s FROM @s5; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+SET @f3 = (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices' AND CONSTRAINT_NAME='fk_devices_cost_center');
+SET @s6 = IF(@f3=0,
+  'ALTER TABLE devices ADD CONSTRAINT fk_devices_cost_center FOREIGN KEY (cost_center_id) REFERENCES cost_centers(id) ON DELETE SET NULL',
+  'SELECT "fk_devices_cost_center exists"');
+PREPARE s FROM @s6; EXECUTE s; DEALLOCATE PREPARE s;
+
+SET FOREIGN_KEY_CHECKS = 1;
+SET SQL_SAFE_UPDATES   = 1;
+
+SELECT 'sections' AS tbl, COUNT(*) AS rows FROM sections
+UNION ALL SELECT 'groups',       COUNT(*) FROM `groups`
+UNION ALL SELECT 'cost_centers', COUNT(*) FROM cost_centers;
+
+SELECT COLUMN_NAME, COLUMN_TYPE FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='devices'
+  AND COLUMN_NAME IN ('section_id','group_id','cost_center_id');
+  
+  SELECT 'sections'     AS tbl, COUNT(*) AS total FROM sections
+UNION ALL
+SELECT 'groups',               COUNT(*) AS total FROM `groups`
+UNION ALL
+SELECT 'cost_centers',         COUNT(*) AS total FROM cost_centers;
+select * from cost_centers;
+
+SELECT COLUMN_NAME, COLUMN_TYPE 
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = 'inventory' 
+  AND TABLE_NAME   = 'devices'
+  AND COLUMN_NAME  IN ('section_id', 'group_id', 'cost_center_id');
+  SELECT DATABASE();
+  SELECT * FROM sections;
+  SELECT id, name FROM departments WHERE name LIKE '%Valve%';
+  SELECT 'sections'     AS tbl, COUNT(*) AS total FROM sections
+UNION ALL
+SELECT 'groups',               COUNT(*) AS total FROM `groups`
+UNION ALL
+SELECT 'cost_centers',         COUNT(*) AS total FROM cost_centers;
+
+
+-- sections: unique theo (name, department_id)
+ALTER TABLE sections
+  ADD CONSTRAINT uq_sections_name_dept 
+  UNIQUE (name, department_id);
+
+-- groups: unique theo (name, section_id)  
+ALTER TABLE `groups`
+  ADD CONSTRAINT uq_groups_name_section
+  UNIQUE (name, section_id);
+
+-- cost_centers: unique theo (name, group_id)
+ALTER TABLE cost_centers
+  ADD CONSTRAINT uq_cost_centers_name_group
+  UNIQUE (name, group_id);
+
+
+SHOW INDEX FROM devices WHERE Column_name = 'qr_code';
+
+
+ALTER TABLE sections 
+ADD UNIQUE KEY uniq_section (department_id, name);
+
+ALTER TABLE `groups`
+ADD UNIQUE KEY uniq_group (section_id, name);
+
+ALTER TABLE cost_centers
+ADD UNIQUE KEY uniq_cc (group_id, name);
+
+
+ALTER TABLE sections 
+ADD UNIQUE uk_section (department_id, name);
+
+ALTER TABLE `groups` 
+ADD UNIQUE uk_group (section_id, name);
+
+ALTER TABLE cost_centers 
+ADD UNIQUE uk_cc (group_id, name);
+
+CREATE INDEX idx_sections_department ON sections(department_id);
+CREATE INDEX idx_groups_section ON `groups`(section_id);
+CREATE INDEX idx_cc_group ON cost_centers(group_id);
+
+CREATE INDEX idx_devices_section ON devices(section_id);
+CREATE INDEX idx_devices_group ON devices(group_id);
+CREATE INDEX idx_devices_cc ON devices(cost_center_id);
+
+ON DELETE SET NULL
+
+
+ALTER TABLE users
+  ADD COLUMN section_id     BIGINT UNSIGNED NULL,
+  ADD COLUMN group_id       BIGINT UNSIGNED NULL,
+  ADD COLUMN cost_center_id BIGINT UNSIGNED NULL;
+  
+ SET SQL_SAFE_UPDATES = 0;
+UPDATE devices SET is_new = 0 WHERE is_new = 1;
+SET SQL_SAFE_UPDATES = 1;
+
+ALTER TABLE devices ADD COLUMN added_by BIGINT UNSIGNED NULL;
+
+
+
+-- Chạy từng block một, bỏ qua nếu báo "Duplicate key name"
+-- ============================================================
+ 
+-- devices
+ALTER TABLE devices ADD INDEX idx_devices_qr     (qr_code);
+ALTER TABLE devices ADD INDEX idx_devices_dept   (department_id);
+ALTER TABLE devices ADD INDEX idx_devices_is_new (is_new);
+ALTER TABLE devices ADD INDEX idx_devices_type   (device_type_id);
+ 
+-- scans
+ALTER TABLE scans ADD INDEX idx_scans_device    (device_id);
+ALTER TABLE scans ADD INDEX idx_scans_session   (session_id);
+ALTER TABLE scans ADD INDEX idx_scans_dept      (scan_department);
+ALTER TABLE scans ADD INDEX idx_scans_user      (user_id);
+ALTER TABLE scans ADD INDEX idx_scans_at        (scanned_at);
+ALTER TABLE scans ADD INDEX idx_scans_device_at (device_id, scanned_at);
+ 
+-- audit_sessions
+ALTER TABLE audit_sessions ADD INDEX idx_audit_dept_ended (department_id, ended_at);
+ALTER TABLE audit_sessions ADD INDEX idx_audit_user       (user_id);
+ALTER TABLE audit_sessions ADD INDEX idx_audit_started    (started_at);
+ 
+-- users
+ALTER TABLE users ADD INDEX idx_users_dept (department_id);
+ 
+-- sections / groups / cost_centers
+ALTER TABLE sections     ADD INDEX idx_sections_dept  (department_id);
+ALTER TABLE `groups`     ADD INDEX idx_groups_section (section_id);
+ALTER TABLE cost_centers ADD INDEX idx_cc_group       (group_id);
+ 
+-- Kiểm tra kết quả
+SHOW INDEX FROM devices;
+SHOW INDEX FROM scans;
+SHOW INDEX FROM audit_sessions;
+ 
+-- Kiểm tra kết quả
+SHOW INDEX FROM devices;
+SHOW INDEX FROM scans;
+SHOW INDEX FROM audit_sessions;
+
+select * from devices;
+select * from users;
+
+UPDATE users SET password='Adminlocal' WHERE username='admin';
+
+DESCRIBE users;
+
+SELECT id, name, qr_code, is_new FROM devices ORDER BY id DESC LIMIT 10;
+
+SET SQL_SAFE_UPDATES = 0;
+UPDATE devices SET is_new = 0 WHERE is_new = 1;
+SET SQL_SAFE_UPDATES = 1;
+
+DESCRIBE audit_sessions;
+
+
+
+
+
+-- lịch sử--
+USE inventory;
+SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_SAFE_UPDATES   = 0;
+ 
+-- ─── Bảng đợt kiểm kê ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS inventory_rounds (
+  id           INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name         VARCHAR(200) NOT NULL                      COMMENT 'Tên đợt, VD: Kiểm kê Q2-2025',
+  description  TEXT         NULL                          COMMENT 'Ghi chú / mô tả đợt',
+  status       ENUM('draft','active','closed')
+               NOT NULL DEFAULT 'draft'                   COMMENT 'draft=mới tạo, active=đang chạy, closed=đã đóng',
+  created_by   INT UNSIGNED NULL                          COMMENT 'ID user tạo đợt',
+  started_at   DATETIME     NULL                          COMMENT 'Thời điểm bắt đầu chính thức',
+  closed_at    DATETIME     NULL                          COMMENT 'Thời điểm đóng đợt',
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ 
+  INDEX idx_rounds_status     (status),
+  INDEX idx_rounds_created_by (created_by),
+  INDEX idx_rounds_started_at (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ 
+-- ─── Bảng snapshot thiết bị của từng đợt ─────────────────────
+-- Khi tạo đợt mới, copy toàn bộ devices hiện tại vào đây.
+-- Đây là dữ liệu độc lập — thay đổi devices sau này không ảnh hưởng.
+CREATE TABLE IF NOT EXISTS inventory_round_items (
+  id                INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  round_id          INT UNSIGNED NOT NULL,
+ 
+  -- Snapshot thông tin thiết bị tại thời điểm tạo đợt
+  device_id         INT          NOT NULL,
+  qr_code           VARCHAR(255) NOT NULL,
+  device_name       VARCHAR(200) NULL,
+  location          VARCHAR(200) NULL,
+  department_id     INT          NULL,
+  department_name   VARCHAR(200) NULL,
+  device_type_id    INT          NULL,
+  device_type_name  VARCHAR(200) NULL,
+  section_name      VARCHAR(200) NULL,
+  group_name        VARCHAR(200) NULL,
+  cost_center_name  VARCHAR(200) NULL,
+  floor             TINYINT      NULL,
+ 
+  -- Kết quả kiểm kê
+  audited           TINYINT(1)   NOT NULL DEFAULT 0       COMMENT '0=chưa kiểm, 1=đã kiểm',
+  audited_by        INT UNSIGNED NULL                     COMMENT 'ID user đã quét',
+  audited_by_name   VARCHAR(200) NULL                     COMMENT 'Tên user (cached)',
+  audited_at        DATETIME     NULL,
+  note              VARCHAR(500) NULL                     COMMENT 'Ghi chú khi quét',
+ 
+  -- Phát hiện dị biệt (thiết bị ở sai phòng, v.v.)
+  scanned_dept_id   INT          NULL,
+  scanned_dept_name VARCHAR(200) NULL,
+  is_mismatch       TINYINT(1)   NOT NULL DEFAULT 0       COMMENT '1 nếu quét tại bộ phận khác dept gốc',
+ 
+  snapshotted_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ 
+  CONSTRAINT fk_round_items_round
+    FOREIGN KEY (round_id) REFERENCES inventory_rounds(id)
+    ON DELETE CASCADE,
+ 
+  INDEX idx_ri_round    (round_id),
+  INDEX idx_ri_device   (device_id),
+  INDEX idx_ri_qr       (qr_code),
+  INDEX idx_ri_audited  (round_id, audited),
+  INDEX idx_ri_dept     (round_id, department_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ 
+-- ─── View tiện lợi: thống kê từng đợt ────────────────────────
+CREATE OR REPLACE VIEW v_round_summary AS
+SELECT
+  r.id,
+  r.name,
+  r.description,
+  r.status,
+  r.started_at,
+  r.closed_at,
+  r.created_at,
+  u.full_name                                        AS created_by_name,
+  COUNT(ri.id)                                       AS total_devices,
+  SUM(ri.audited)                                    AS audited_count,
+  COUNT(ri.id) - SUM(ri.audited)                     AS pending_count,
+  ROUND(SUM(ri.audited) * 100.0 / NULLIF(COUNT(ri.id),0), 1) AS progress_pct
+FROM inventory_rounds r
+LEFT JOIN inventory_round_items ri ON ri.round_id = r.id
+LEFT JOIN users u ON u.id = r.created_by
+GROUP BY r.id;
+ 
+SET FOREIGN_KEY_CHECKS = 1;
+SET SQL_SAFE_UPDATES   = 1; 
+
+SHOW TABLES LIKE 'inventory_round%';
+DESCRIBE inventory_rounds;
+DESCRIBE inventory_round_items;
+SELECT * FROM v_round_summary;
+
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE inventory_round_items;
+TRUNCATE TABLE inventory_rounds;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+
+
+
+
+
+
+
+
+
+-- ==================-- 
+USE inventory;
+SET SQL_SAFE_UPDATES = 0;
+ 
+-- 1. serial_number (snapshot từ devices.qr_code hoặc serial riêng)
+SET @c1 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='serial_number');
+SET @s1 = IF(@c1=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN serial_number VARCHAR(255) NULL COMMENT "Số serial snapshot tại thời điểm tạo đợt" AFTER qr_code',
+  'SELECT "serial_number already exists"');
+PREPARE s FROM @s1; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- 2. scanned_by_name — tên người quét thực tế (khác audited_by_name là người audit admin)
+SET @c2 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='scanned_by_name');
+SET @s2 = IF(@c2=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN scanned_by_name VARCHAR(200) NULL COMMENT "Tên người thực tế cầm máy quét" AFTER audited_by_name',
+  'SELECT "scanned_by_name already exists"');
+PREPARE s FROM @s2; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- 3. scanned_location — vị trí thực tế khi quét
+--    VD: "Valve Auxiliary Assembly" hoặc "Chuyển từ Dept A → Dept B"
+SET @c3 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='scanned_location');
+SET @s3 = IF(@c3=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN scanned_location VARCHAR(200) NULL COMMENT "Vị trí thực tế lúc quét (tên dept/room)" AFTER scanned_dept_name',
+  'SELECT "scanned_location already exists"');
+PREPARE s FROM @s3; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- 4. scanned_section_name
+SET @c4 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='scanned_section_name');
+SET @s4 = IF(@c4=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN scanned_section_name VARCHAR(200) NULL AFTER scanned_location',
+  'SELECT "scanned_section_name already exists"');
+PREPARE s FROM @s4; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- 5. scanned_group_name
+SET @c5 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='scanned_group_name');
+SET @s5 = IF(@c5=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN scanned_group_name VARCHAR(200) NULL AFTER scanned_section_name',
+  'SELECT "scanned_group_name already exists"');
+PREPARE s FROM @s5; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+-- 6. scanned_cost_center_name
+SET @c6 = (SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA='inventory' AND TABLE_NAME='inventory_round_items' AND COLUMN_NAME='scanned_cost_center_name');
+SET @s6 = IF(@c6=0,
+  'ALTER TABLE inventory_round_items ADD COLUMN scanned_cost_center_name VARCHAR(200) NULL AFTER scanned_group_name',
+  'SELECT "scanned_cost_center_name already exists"');
+PREPARE s FROM @s6; EXECUTE s; DEALLOCATE PREPARE s;
+ 
+SET SQL_SAFE_UPDATES = 1;
+ 
+-- Kiểm tra kết quả
+SELECT COLUMN_NAME, COLUMN_TYPE, COLUMN_COMMENT
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = 'inventory'
+  AND TABLE_NAME   = 'inventory_round_items'
+ORDER BY ORDINAL_POSITION;
+
+
+ALTER TABLE inventory_rounds
+  ADD COLUMN end_date DATE NULL COMMENT 'Ngày kết thúc dự kiến (user nhập khi tạo đợt)'
+  AFTER started_at;
+  
+  ALTER TABLE inventory_rounds
+  MODIFY COLUMN status ENUM('draft','active','paused','completed','closed')
+  NOT NULL DEFAULT 'draft';
+  
+  UPDATE devices d
+JOIN inventory_round_items ri ON ri.device_id = d.id
+SET d.is_new = 0
+WHERE ri.audited = 0 AND d.is_new = 1
+AND d.added_by IS NULL;  -- chỉ reset device do import, không phải do user add
+
+
+
+
+ 
+-- Backfill: cập nhật những item đã có device_id nhưng chưa có device_type_name
+UPDATE inventory_round_items ri
+  JOIN devices d       ON d.id  = ri.device_id
+  JOIN device_types dt ON dt.id = d.device_type_id
+SET ri.device_type_name = dt.name
+WHERE ri.device_type_name IS NULL
+  AND d.device_type_id IS NOT NULL;
+  
+  
+  SELECT ri.id, ri.device_name, ri.device_type_name, d.device_type_id, dt.name
+FROM inventory_round_items ri
+LEFT JOIN devices d ON d.id = ri.device_id
+LEFT JOIN device_types dt ON dt.id = d.device_type_id
+LIMIT 10;
+
+
+ALTER TABLE cost_centers
+  ADD COLUMN section_id    INT NULL AFTER group_id,
+  ADD COLUMN department_id INT NULL AFTER section_id;
+ 
+-- Index cho query nhanh
+ALTER TABLE cost_centers
+  ADD INDEX idx_cc_section    (section_id),
+  ADD INDEX idx_cc_department (department_id);
+
+
+
+SELECT CONSTRAINT_NAME 
+FROM information_schema.KEY_COLUMN_USAGE 
+WHERE TABLE_NAME = 'cost_centers' 
+AND COLUMN_NAME = 'group_id';
+
+
+SELECT CONSTRAINT_NAME, CONSTRAINT_TYPE
+FROM information_schema.TABLE_CONSTRAINTS
+WHERE TABLE_NAME = 'cost_centers';
+
+ALTER TABLE cost_centers MODIFY COLUMN group_id INT NULL;
+
+ALTER TABLE cost_centers DROP FOREIGN KEY uq_cost_centers_name_group;
+
+ALTER TABLE cost_centers MODIFY COLUMN group_id INT NULL;
+
+ALTER TABLE cost_centers ADD CONSTRAINT uq_cost_centers_name_group
+  FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE SET NULL;
+
+ALTER TABLE cost_centers ADD COLUMN section_id    INT NULL AFTER group_id;
+ALTER TABLE cost_centers ADD COLUMN department_id INT NULL AFTER section_id;
+SHOW CREATE TABLE cost_centers;
+
+
+-- 1. Drop FK
+ALTER TABLE cost_centers DROP FOREIGN KEY fk_cost_centers_group;
+
+-- 2. Modify cho phép NULL
+ALTER TABLE cost_centers MODIFY COLUMN group_id INT NULL;
+
+-- 3. Add lại FK (với NULL cho phép)
+ALTER TABLE cost_centers ADD CONSTRAINT fk_cost_centers_group 
+  FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL;
+
+-- 4. Thêm 2 cột mới
+ALTER TABLE cost_centers ADD COLUMN section_id INT NULL AFTER group_id;
+ALTER TABLE cost_centers ADD COLUMN department_id INT NULL AFTER section_id;
