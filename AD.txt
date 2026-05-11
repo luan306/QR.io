@@ -1,0 +1,10 @@
+1. AD Server
+LDAP_URL=ldap://192.168.x.x:389
+2. Domain name
+LDAP_DOMAIN=SMC        ← NetBIOS name (phần trước dấu \ khi login Windows: SMC\username)
+LDAP_BASE=DC=smc,DC=local   ← DNS domain của AD
+3. Service account (để sync user)
+LDAP_BIND_DN=CN=svc-ldap,OU=Service Accounts,DC=smc,DC=local
+LDAP_BIND_PASS=password
+4. OU chứa user cần sync
+LDAP_SYNC_OU=OU=Users,DC=smc,DC=local
