@@ -56,7 +56,7 @@ router.post("/", checkAdmin, async (req, res) => {
       return res.json({ success: false, message: "Username đã tồn tại" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     await query(
       `INSERT INTO users (username, password, full_name, department_id, section_id, group_id, cost_center_id, role)
@@ -101,7 +101,7 @@ router.put("/:id", checkAdmin, async (req, res) => {
     ];
 
     if (password && password.trim() !== "") {
-      const hashedPassword = await bcrypt.hash(password, 12);
+      const hashedPassword = await bcrypt.hash(password, 10);
       sql += ", password=?";
       params.push(hashedPassword);
     }
@@ -152,11 +152,29 @@ router.put("/:id", checkAdmin, async (req, res) => {
 router.delete("/:id", checkAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query("DELETE FROM users WHERE id=?", [id]);
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: "User không tồn tại" });
+    // Không cho xóa chính mình
+    if (String(req.session?.user?.id) === String(id)) {
+      return res.status(403).json({ success: false, message: "Không thể xóa tài khoản đang đăng nhập" });
     }
+
+    // Không cho xóa admin gốc (id=1 hoặc username='admin')
+    const [target] = await query("SELECT id, username, role FROM users WHERE id = ? LIMIT 1", [id]);
+    if (!target) return res.status(404).json({ success: false, message: "User không tồn tại" });
+
+    if (target.username === "admin" || (target.role === "admin" && String(target.id) === "1")) {
+      return res.status(403).json({ success: false, message: "Không thể xóa tài khoản admin gốc" });
+    }
+
+    // Đảm bảo còn ít nhất 1 admin khác nếu xóa admin
+    if (target.role === "admin") {
+      const admins = await query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'admin' AND id != ?", [id]);
+      if (admins[0].cnt === 0) {
+        return res.status(403).json({ success: false, message: "Không thể xóa admin cuối cùng" });
+      }
+    }
+
+    await query("DELETE FROM users WHERE id = ?", [id]);
     res.json({ success: true, message: "Đã xóa tài khoản" });
 
   } catch (err) {

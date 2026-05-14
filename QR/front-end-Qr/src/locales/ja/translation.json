@@ -77,7 +77,7 @@
   "not_audited": "未監査",
   "success": "成功",
   "error": "エラー",
-  "manage_users": "ユーザー管理",
+  "manage_users": "ユーザー",
   "manage_devices": "デバイス管理",
   "device_types": "デバイスタイプ",
   "reports": "レポート",
@@ -293,5 +293,10 @@
   "inv_round_status_ended_title": "棚卸ラウンドが終了しました",
   "inv_round_status_ended_desc": "今月の棚卸ラウンドはすべて完了または一時停止されました。",
   "management": "管理",
-  "account_locked": "あなたのアカウントはロックされています。ITサポートにお問い合わせください。"
+  "account_locked": "あなたのアカウントはロックされています。ITサポートにお問い合わせください。",
+  "or_enter_manually": "またはシリアル番号を手動で入力",
+  "enter_qr_code": "QRコードを入力",
+  "scan_or_type_qr": "QRコードをスキャンまたは入力",
+  "hardware_scan_hint": "ハンディスキャナーを使用する場合：入力欄にカーソルを合わせてから、トリガーを引いてQRコードをスキャンしてください。"
+
 }

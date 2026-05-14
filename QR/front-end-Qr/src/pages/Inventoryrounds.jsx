@@ -257,18 +257,19 @@ function DevicesTab({ round, items = [], itemsLoading, onRefresh }) {
   const exportExcelFiltered = () => {
     const exportData = filtered.map((d, i) => ({
       STT: i + 1,
+      'PIC': d.pic_name || d.pic || '',
+      'Bộ phận': d.department_name,
+      'Section': d.section_name,
+      'Group': d.group_name,
+      'Cost Center': d.cost_center_name,
+      'Số serial': d.serial_number || d.qr_code,
       'Tên thiết bị': d.device_name || d.name,
       'Loại thiết bị': d.device_type_name || d.device_type || '',
-      'Số serial': d.serial_number || d.qr_code,
       'Người quét': d.scanned_by_name || d.audited_by_name || '',
       'Trạng thái': d.audited ? 'Đã quét' : d.is_new ? 'Mới thêm' : 'Chưa quét',
       'Vị trí / chuyển': d.is_mismatch
         ? `Chuyển từ ${d.department_name} → ${d.scanned_dept_name || ''}`
         : (d.scanned_dept_name || d.department_name || ''),
-      'Bộ phận': d.department_name,
-      'Section': d.section_name,
-      'Group': d.group_name,
-      'Cost Center': d.cost_center_name,
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -368,22 +369,23 @@ function DevicesTab({ round, items = [], itemsLoading, onRefresh }) {
             <tr className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
               <th className="pl-4 pr-2 py-3 w-8"><input type="checkbox" checked={filtered.length > 0 && selected.size === filtered.length} onChange={toggleAll} className="accent-[#079DD9]" /></th>
               <th className="px-3 py-3 w-10">#</th>
-              <th className="px-3 py-3 min-w-[160px]">{t('device_name')}</th>
-              <th className="px-3 py-3 min-w-[120px]">{t('device_type')}</th>
-              <th className="px-3 py-3 min-w-[110px]">{t('inv_serial')}</th>
-              <th className="px-3 py-3 min-w-[130px]">{t('inv_scanned_by')}</th>
-              <th className="px-3 py-3 min-w-[100px] text-center">{t('inv_status')}</th>
-              <th className="px-3 py-3 min-w-[240px]">{t('inv_location_transfer')}</th>
+              <th className="px-3 py-3 min-w-[130px]">PIC</th>
               <th className="px-3 py-3 min-w-[160px]">{t('department')}</th>
               <th className="px-3 py-3 min-w-[120px]">Section</th>
               <th className="px-3 py-3 min-w-[120px]">Group</th>
-              <th className="px-3 py-3 min-w-[100px]">Cost Center</th>
+              <th className="px-3 py-3 min-w-[110px]">Cost Center</th>
+              <th className="px-3 py-3 min-w-[110px]">{t('inv_serial')}</th>
+              <th className="px-3 py-3 min-w-[160px]">{t('device_name')}</th>
+              <th className="px-3 py-3 min-w-[120px]">{t('device_type')}</th>
+              <th className="px-3 py-3 min-w-[130px]">{t('inv_scanned_by')}</th>
+              <th className="px-3 py-3 min-w-[100px] text-center">{t('inv_status')}</th>
+              <th className="px-3 py-3 min-w-[220px]">{t('inv_location_transfer')}</th>
               <th className="px-3 py-3 w-20 text-center">{t('inv_action')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {paged.length === 0
-              ? <tr><td colSpan={13} className="py-16 text-center text-gray-400 text-sm">{t('inv_no_devices')}</td></tr>
+              ? <tr><td colSpan={14} className="py-16 text-center text-gray-400 text-sm">{t('inv_no_devices')}</td></tr>
               : paged.map((dev, idx) => {
                   const isMismatch = !!dev.is_mismatch;
                   const locDisplay = (() => {
@@ -406,18 +408,39 @@ function DevicesTab({ round, items = [], itemsLoading, onRefresh }) {
                     <tr key={dev.id} className={`hover:bg-[#e8f6fd]/30 transition-colors ${selected.has(dev.id) ? 'bg-[#e8f6fd]' : ''}`}>
                       <td className="pl-4 pr-2 py-3"><input type="checkbox" checked={selected.has(dev.id)} onChange={() => toggleOne(dev.id)} className="accent-[#079DD9]" /></td>
                       <td className="px-3 py-3 text-gray-400 text-xs">{(page - 1) * PER_PAGE + idx + 1}</td>
+
+                      {/* PIC */}
+                      <td className="px-3 py-3 text-xs text-gray-700 font-medium">
+                        {dv(dev.pic_name || dev.pic || null)}
+                      </td>
+
+                      {/* Bộ phận → Section → Group → Cost Center */}
+                      <td className="px-3 py-3 text-gray-600 text-xs">{dv(dev.department_name)}</td>
+                      <td className="px-3 py-3 text-gray-500 text-xs">{dv(dev.section_name)}</td>
+                      <td className="px-3 py-3 text-gray-500 text-xs">{dv(dev.group_name)}</td>
+                      <td className="px-3 py-3 text-xs">
+                        <span className="font-mono text-gray-600 bg-gray-50 border border-gray-100 px-1.5 py-0.5 rounded">{dv(dev.cost_center_name)}</span>
+                      </td>
+
+                      {/* Số serial → Tên thiết bị → Loại */}
+                      <td className="px-3 py-3 font-mono text-gray-600 text-xs">{dv(dev.serial_number || dev.qr_code)}</td>
                       <td className="px-3 py-3">
                         <span className="font-semibold text-gray-900 text-sm">{dv(dev.device_name || dev.name)}</span>
                       </td>
                       <td className="px-3 py-3 text-xs text-gray-600">{dv(dev.device_type_name || dev.device_type)}</td>
-                      <td className="px-3 py-3 font-mono text-gray-600 text-xs">{dv(dev.serial_number || dev.qr_code)}</td>
+
+                      {/* Người quét */}
                       <td className="px-3 py-3 text-gray-700 text-xs font-medium">{dv(dev.scanned_by_name || dev.audited_by_name || (dev.is_new ? dev.added_by_name : null))}</td>
+
+                      {/* Trạng thái */}
                       <td className="px-3 py-3 text-center">
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap border ${dev.audited ? 'bg-green-50 text-green-700 border-green-200' : dev.is_new ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dev.audited ? 'bg-green-500' : dev.is_new ? 'bg-blue-500' : 'bg-gray-400'}`} />
                           {dev.audited ? t('scanned') : dev.is_new ? `🆕 ${t('new_device')}` : t('not_scanned')}
                         </span>
                       </td>
+
+                      {/* Vị trí / Chuyển */}
                       <td className="px-3 py-3 text-xs">
                         {locDisplay
                           ? locDisplay.transfer
@@ -434,12 +457,8 @@ function DevicesTab({ round, items = [], itemsLoading, onRefresh }) {
                             : <span className="text-gray-300">—</span>
                         }
                       </td>
-                      <td className="px-3 py-3 text-gray-600 text-xs">{dv(dev.department_name)}</td>
-                      <td className="px-3 py-3 text-gray-500 text-xs">{dv(dev.section_name)}</td>
-                      <td className="px-3 py-3 text-gray-500 text-xs">{dv(dev.group_name)}</td>
-                      <td className="px-3 py-3 text-xs">
-                        <span className="font-mono text-gray-600 bg-gray-50 border border-gray-100 px-1.5 py-0.5 rounded">{dv(dev.cost_center_name)}</span>
-                      </td>
+
+                      {/* Hành động */}
                       <td className="px-3 py-3 text-center">
                         <button
                           onClick={async () => {
@@ -600,24 +619,26 @@ function RoundDetail({ round: initialRound, onBack, onRoundUpdate }) {
   const downloadTemplate = () => {
     const templateRows = [
       {
-        Name: 'Máy tính Dell XPS',
-        Serial: 'QR001',
-        Department: 'Phòng IT',
+        PIC: 'Nguyễn Văn A',
+        'Bộ phận': 'Phòng IT',
         Section: 'Section A',
         Group: 'Group 1',
-        CostCenter: 'CC001',
-        DeviceType: 'Laptop',
-        Location: 'Tầng 2 - Phòng 201',
+        'Cost Center': 'CC001',
+        'Số serial': 'QR001',
+        'Tên thiết bị': 'Máy tính Dell XPS',
+        'Loại thiết bị': 'Laptop',
+        'Vị trí / chuyển': 'Tầng 2 - Phòng 201',
       },
       {
-        Name: 'Màn hình Samsung',
-        Serial: 'QR002',
-        Department: 'Phòng Kế toán',
+        PIC: 'Trần Thị B',
+        'Bộ phận': 'Phòng Kế toán',
         Section: '',
         Group: '',
-        CostCenter: '',
-        DeviceType: 'Monitor',
-        Location: 'Tầng 3 - Phòng 301',
+        'Cost Center': '',
+        'Số serial': 'QR002',
+        'Tên thiết bị': 'Màn hình Samsung',
+        'Loại thiết bị': 'Monitor',
+        'Vị trí / chuyển': 'Tầng 3 - Phòng 301',
       },
     ];
     const ws = XLSX.utils.json_to_sheet(templateRows);

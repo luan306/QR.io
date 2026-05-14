@@ -866,3 +866,25 @@ ALTER TABLE users
   ADD COLUMN locked_at       DATETIME NULL               AFTER login_attempts;
  
 ALTER TABLE users ADD INDEX idx_users_locked (locked_at);
+
+
+ALTER TABLE inventory_round_items
+  ADD COLUMN pic VARCHAR(255) NULL DEFAULT NULL
+  AFTER cost_center_name;
+
+SELECT * FROM departments ORDER BY id DESC LIMIT 10;
+
+
+SET GLOBAL max_connections = 300;
+-- Kiểm tra index đã tồn tại chưa rồi mới tạo
+CREATE INDEX idx_scans_device ON inventory.scans(device_id);
+CREATE INDEX idx_scans_dept   ON inventory.scans(scan_department_id);
+
+SELECT username, LEFT(password, 7) AS cost FROM users WHERE username = 'admin';
+
+
+ALTER TABLE inventory_round_items ADD COLUMN section_id     INT NULL AFTER department_id;
+ALTER TABLE inventory_round_items ADD COLUMN group_id       INT NULL AFTER section_id;
+ALTER TABLE inventory_round_items ADD COLUMN cost_center_id INT NULL AFTER group_id;
+
+ALTER TABLE `groups` ADD COLUMN department_id INT NULL AFTER section_id;

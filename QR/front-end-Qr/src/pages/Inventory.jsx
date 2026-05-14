@@ -36,21 +36,22 @@ export default function Inventory() {
       setActiveRound(active);
       setRoundStatus('active');
 
-      // 2. Load items của đợt + scans
-      const [itemsRes, scanRes] = await Promise.all([
-        fetch(`/api/inventory-rounds/${active.id}/items`),
-        fetch('/api/scans'),
-      ]);
+      // 2. Load items của đợt active
+      const itemsRes  = await fetch(`/api/inventory-rounds/${active.id}/items`);
       const itemsData = await itemsRes.json().catch(() => []);
-      const scanData  = await scanRes.json().catch(() => []);
 
       const items = Array.isArray(itemsData) ? itemsData : (itemsData?.data ?? []);
-      const scans = Array.isArray(scanData)  ? scanData  : (scanData?.scans ?? []);
 
+      // iScanned: chỉ true khi item trong đợt NÀY do chính user này quét
       const myScannedQRs = new Set(
-        scans
-          .filter(s => s.user_name === currentUser?.full_name || s.user_id === currentUser?.id)
-          .map(s => s.qr_code)
+        items
+          .filter(d =>
+            d.audited &&
+            (d.scanned_by_name === currentUser?.full_name ||
+             d.audited_by      === currentUser?.id ||
+             d.audited_by_name === currentUser?.full_name)
+          )
+          .map(d => d.qr_code)
       );
 
       let mapped = items.map((d) => {
@@ -65,6 +66,7 @@ export default function Inventory() {
           dept:          d.department_name  || 'N/A',
           department_id: d.department_id    || null,
           note:          d.location         || '',
+          pic:           d.pic              || null,
           scanned,
           isNew,
           iScanned,
@@ -201,6 +203,9 @@ export default function Inventory() {
                       </div>
                       <div className="text-xs opacity-90">{t("qr_code")}: {a.qr}</div>
                       <div className="text-xs opacity-90">{t("department")}: {a.dept}</div>
+                      {a.pic && (
+                        <div className="text-xs opacity-90">👤 PIC: {a.pic}</div>
+                      )}
                       {a.iScanned && String(a.department_id) !== String(currentUser?.department_id) && (
                         <div className="text-xs mt-1 bg-white/20 rounded-lg px-2 py-0.5 inline-block font-semibold">
                           🔄 Thiết bị bộ phận khác — bạn đã quét

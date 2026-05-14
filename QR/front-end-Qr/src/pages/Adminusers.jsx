@@ -29,10 +29,15 @@ function Users() {
   const [editGroups,   setEditGroups]   = useState([]);
   const [editCosts,    setEditCosts]    = useState([]);
 
+  const fetchDepts = useCallback(async () => {
+    const d = await fetch(API + '/departments').then(r => r.json()).catch(() => []);
+    setDepts(toArray(d));
+  }, []);
+
   useEffect(() => {
     fetchUsers();
-    fetch(API + '/departments').then(r => r.json()).then(d => setDepts(toArray(d))).catch(() => {});
-  }, []);
+    fetchDepts();
+  }, [fetchDepts]);
 
   // Form cascades
   useEffect(() => {
@@ -105,57 +110,85 @@ function Users() {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
       if (!rows.length) { alert('File Excel trống hoặc sai định dạng'); return; }
 
-      // Build dept map từ depts đã load sẵn
-      const deptMap = {};
-      depts.forEach(d => { deptMap[d.name.trim().toLowerCase()] = d.id; });
-
-      // Fetch sections cho tất cả depts song song
-      const allSections = (await Promise.all(
-        depts.map(d =>
-          fetch(API + '/departments/' + d.id + '/sections').then(r => r.json())
-            .then(d => toArray(d)).catch(() => [])
-        )
-      )).flat();
-
-      // Fetch groups cho tất cả sections song song
-      const allGroups = (await Promise.all(
-        allSections.map(s =>
-          fetch(API + '/sections/' + s.id + '/groups').then(r => r.json())
-            .then(d => toArray(d)).catch(() => [])
-        )
-      )).flat();
-
-      // Fetch cost centers cho tất cả groups song song
-      const allCosts = (await Promise.all(
-        allGroups.map(g =>
-          fetch(API + '/groups/' + g.id + '/cost-centers').then(r => r.json())
-            .then(d => toArray(d)).catch(() => [])
-        )
-      )).flat();
-
-      // Build lookup maps tên → id
-      const secMap = {};
-      allSections.forEach(s => { secMap[s.name.trim().toLowerCase()] = s.id; });
-      const grpMap = {};
-      allGroups.forEach(g => { grpMap[g.name.trim().toLowerCase()] = g.id; });
-      const ccMap = {};
-      allCosts.forEach(c => { ccMap[c.name.trim().toLowerCase()] = c.id; });
+      // Helper: tạo hoặc lấy id của 1 record
+      const getOrCreate = async (url, listUrl, name, body) => {
+        try {
+          const list = toArray(await fetch(listUrl).then(r => r.json()).catch(() => []));
+          const found = list.find(x => x.name.trim().toLowerCase() === name.trim().toLowerCase());
+          if (found) return found.id;
+          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+          return res.id || res.insertId || null;
+        } catch { return null; }
+      };
 
       let ok = 0, fail = 0, failList = [];
       for (const row of rows) {
-        const username = String(row.username || '').trim();
-        const password = String(row.password || '').trim();
+        const username    = String(row.username     || '').trim();
+        const password    = String(row.password     || '').trim();
+        const deptName    = String(row.department_name   || '').trim();
+        const sectionName = String(row.section_name      || '').trim();
+        const groupName   = String(row.group_name        || '').trim();
+        const costName    = String(row.cost_center_name  || '').trim();
+
         if (!username || !password) { fail++; failList.push('Thiếu username/password'); continue; }
+
+        // ── Tự động tạo cây: Department → Section → Group → Cost Center ──
+        let deptId = null, sectionId = null, groupId = null, costId = null;
+
+        if (deptName) {
+          deptId = await getOrCreate(
+            API + '/departments',
+            API + '/departments',
+            deptName,
+            { name: deptName }
+          );
+          // Reload depts sau khi tạo mới
+          const freshDepts = toArray(await fetch(API + '/departments').then(r => r.json()).catch(() => []));
+          setDepts(freshDepts);
+        }
+
+        if (sectionName && deptId) {
+          sectionId = await getOrCreate(
+            API + '/departments/' + deptId + '/sections',
+            API + '/departments/' + deptId + '/sections',
+            sectionName,
+            { name: sectionName }
+          );
+        }
+
+        if (groupName && sectionId) {
+          groupId = await getOrCreate(
+            API + '/sections/' + sectionId + '/groups',
+            API + '/sections/' + sectionId + '/groups',
+            groupName,
+            { name: groupName }
+          );
+        }
+
+        if (costName && (groupId || sectionId || deptId)) {
+          const parentKey = groupId   ? 'group_id'      :
+                            sectionId ? 'section_id'    : 'department_id';
+          const parentId  = groupId || sectionId || deptId;
+          const listUrl   = groupId   ? API + '/groups/'      + groupId   + '/cost-centers' :
+                            sectionId ? API + '/cost-centers/by-section/' + sectionId :
+                                        API + '/cost-centers/by-department/' + deptId;
+          costId = await getOrCreate(
+            API + '/cost-centers',
+            listUrl,
+            costName,
+            { name: costName, [parentKey]: parentId }
+          );
+        }
 
         const payload = {
           username,
           password,
-          full_name:      String(row.full_name         || '').trim(),
-          role:           String(row.role              || 'user').trim(),
-          department_id:  deptMap[String(row.department_name  || '').trim().toLowerCase()] || null,
-          section_id:     secMap[String(row.section_name      || '').trim().toLowerCase()] || null,
-          group_id:       grpMap[String(row.group_name        || '').trim().toLowerCase()] || null,
-          cost_center_id: ccMap[String(row.cost_center_name   || '').trim().toLowerCase()] || null,
+          full_name:      String(row.full_name || '').trim(),
+          role:           String(row.role      || 'user').trim(),
+          department_id:  deptId,
+          section_id:     sectionId,
+          group_id:       groupId,
+          cost_center_id: costId,
         };
 
         try {
@@ -312,8 +345,8 @@ function Users() {
                 <span className={'px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ' + roleColor(u.role)}>{u.role}</span>
               </div>
               <div className="flex gap-2 mt-2">
-                <Btn color="yellow" size="sm" onClick={() => setEditUser({...u, password: ''})}>✏️ {t('edit')}</Btn>
-                <Btn color="red"    size="sm" onClick={() => deleteUser(u.id)}>🗑️ {t('delete')}</Btn>
+                <Btn color="yellow" size="sm" onClick={() => { fetchDepts(); setEditUser({...u, password: ''}); }}>✏️ {t('edit')}</Btn>
+                {!(u.username === 'admin' || (u.role === 'admin' && u.id === 1)) && <Btn color="red" size="sm" onClick={() => deleteUser(u.id)}>🗑️ {t('delete')}</Btn>}
                 {u.locked_at && <Btn color="green" size="sm" onClick={() => unlockUser(u.id, u.username)}>🔓 {t('unlock')}</Btn>}
               </div>
             </div>
@@ -354,8 +387,8 @@ function Users() {
                       : <span className="text-gray-300 text-xs">—</span>}
                   </td>
                   <td className="border p-2 text-center space-x-1">
-                    <Btn color="yellow" size="sm" onClick={() => setEditUser({...u, password: '', section_id: u.section_id || '', group_id: u.group_id || '', cost_center_id: u.cost_center_id || ''})}>✏️</Btn>
-                    <Btn color="red"    size="sm" onClick={() => deleteUser(u.id)}>🗑️</Btn>
+                    <Btn color="yellow" size="sm" onClick={() => { fetchDepts(); setEditUser({...u, password: '', section_id: u.section_id || '', group_id: u.group_id || '', cost_center_id: u.cost_center_id || ''}); }}>✏️</Btn>
+                    {!(u.username === 'admin' || (u.role === 'admin' && u.id === 1)) && <Btn color="red" size="sm" onClick={() => deleteUser(u.id)}>🗑️</Btn>}
                   </td>
                 </tr>
               ))}

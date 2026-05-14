@@ -149,12 +149,17 @@ router.get("/inventory-rounds/:id/items", async (req, res) => {
         END AS location,
 
         ri.department_id,
-        ri.department_name,
+        -- JOIN live để đồng bộ khi admin đổi tên bộ phận
+        COALESCE(dep_live.name, ri.department_name) AS department_name,
 
         -- Section/Group/CC: nếu đã quét → dùng thông tin nơi quét
-        CASE WHEN ri.audited = 1 AND ri.scanned_section_name   IS NOT NULL THEN ri.scanned_section_name   ELSE ri.section_name   END AS section_name,
-        CASE WHEN ri.audited = 1 AND ri.scanned_group_name     IS NOT NULL THEN ri.scanned_group_name     ELSE ri.group_name     END AS group_name,
-        CASE WHEN ri.audited = 1 AND ri.scanned_cost_center_name IS NOT NULL THEN ri.scanned_cost_center_name ELSE ri.cost_center_name END AS cost_center_name,
+        -- Ngược lại JOIN live từ ID để đồng bộ khi admin đổi tên
+        CASE WHEN ri.audited = 1 AND ri.scanned_section_name     IS NOT NULL THEN ri.scanned_section_name
+             ELSE COALESCE(sec_live.name,  ri.section_name)   END AS section_name,
+        CASE WHEN ri.audited = 1 AND ri.scanned_group_name       IS NOT NULL THEN ri.scanned_group_name
+             ELSE COALESCE(grp_live.name,  ri.group_name)     END AS group_name,
+        CASE WHEN ri.audited = 1 AND ri.scanned_cost_center_name IS NOT NULL THEN ri.scanned_cost_center_name
+             ELSE COALESCE(cc_live.name,   ri.cost_center_name) END AS cost_center_name,
 
         ri.floor,
 
@@ -173,6 +178,8 @@ router.get("/inventory-rounds/:id/items", async (req, res) => {
 
         ri.is_mismatch,
 
+        ri.pic,
+
         ri.note,
 
         ri.snapshotted_at,
@@ -187,10 +194,15 @@ router.get("/inventory-rounds/:id/items", async (req, res) => {
         dep_add.name    AS added_dept_name
 
       FROM inventory_round_items ri
-      LEFT JOIN devices     d       ON d.id         = ri.device_id
-      LEFT JOIN device_types dt     ON dt.id        = d.device_type_id
-      LEFT JOIN users       u_add   ON u_add.id     = d.added_by
-      LEFT JOIN departments dep_add ON dep_add.id   = d.department_id
+      LEFT JOIN devices      d        ON d.id          = ri.device_id
+      LEFT JOIN device_types dt       ON dt.id         = d.device_type_id
+      LEFT JOIN users        u_add    ON u_add.id      = d.added_by
+      LEFT JOIN departments  dep_add  ON dep_add.id    = d.department_id
+      -- JOIN live theo ID lưu trong round_items để đồng bộ tên
+      LEFT JOIN departments  dep_live ON dep_live.id   = ri.department_id
+      LEFT JOIN sections     sec_live ON sec_live.id   = COALESCE(ri.section_id, d.section_id)
+      LEFT JOIN \`groups\`    grp_live ON grp_live.id   = COALESCE(ri.group_id, d.group_id)
+      LEFT JOIN cost_centers cc_live  ON cc_live.id    = COALESCE(ri.cost_center_id, d.cost_center_id)
 
       WHERE ri.round_id = ?
 
@@ -499,6 +511,7 @@ router.post(
 
         if (!qr) { skipped++; skipReasons.no_qr++; continue; } // bắt buộc phải có QR/serial
 
+        const pic         = get(row, "PIC", "pic", "Người phụ trách", "nguoi phu trach");
         const deptName    = get(row, "Bộ phận", "Department", "department_name", "department", "phòng ban");
         const sectionName = get(row, "Section", "section_name", "section");
         const groupName   = get(row, "Group", "group_name", "group");
@@ -507,14 +520,78 @@ router.post(
         const location    = get(row, "Vị trí / chuyển", "Location", "location", "vị trí", "vi tri");
         const floor       = get(row, "floor", "tầng") || null;
 
-        // Tìm department_id nếu có tên bộ phận
-        let deptId = null;
+        // ── Tự động tạo device_type nếu chưa tồn tại ──
+        let deviceTypeId = null;
+        if (deviceType) {
+          const [dt] = await query(`SELECT id FROM device_types WHERE name=? LIMIT 1`, [deviceType.trim()]);
+          if (dt) {
+            deviceTypeId = dt.id;
+          } else {
+            const r = await query(`INSERT INTO device_types (name) VALUES (?)`, [deviceType.trim()]);
+            deviceTypeId = r.insertId;
+          }
+        }
+
+        // ── Tự động tạo cây: Department → Section → Group → Cost Center ──
+        let deptId    = null;
+        let sectionId = null;
+        let groupId   = null;
+        let costId    = null;
+
+        // Department
         if (deptName) {
-          const [dep] = await query(
-            `SELECT id FROM departments WHERE name = ? LIMIT 1`,
-            [deptName]
-          );
-          if (dep) deptId = dep.id;
+          const [dep] = await query(`SELECT id FROM departments WHERE name=? LIMIT 1`, [deptName.trim()]);
+          if (dep) {
+            deptId = dep.id;
+          } else {
+            const r = await query(`INSERT INTO departments (name) VALUES (?)`, [deptName.trim()]);
+            deptId = r.insertId;
+          }
+        }
+
+        // Section (cần department)
+        if (sectionName && deptId) {
+          const [sec] = await query(`SELECT id FROM sections WHERE name=? AND department_id=? LIMIT 1`, [sectionName.trim(), deptId]);
+          if (sec) {
+            sectionId = sec.id;
+          } else {
+            const r = await query(`INSERT INTO sections (name, department_id) VALUES (?, ?)`, [sectionName.trim(), deptId]);
+            sectionId = r.insertId;
+          }
+        }
+
+        // Group (cần section)
+        if (groupName && sectionId) {
+          const [grp] = await query(`SELECT id FROM \`groups\` WHERE name=? AND section_id=? LIMIT 1`, [groupName.trim(), sectionId]);
+          if (grp) {
+            groupId = grp.id;
+          } else {
+            const r = await query(`INSERT INTO \`groups\` (name, section_id) VALUES (?, ?)`, [groupName.trim(), sectionId]);
+            groupId = r.insertId;
+          }
+        }
+
+        // Cost Center (gắn vào group nếu có, rồi section, rồi department)
+        if (costCenter) {
+          const parentCol = groupId   ? 'group_id'      :
+                            sectionId ? 'section_id'    :
+                            deptId    ? 'department_id' : null;
+          const parentId  = groupId || sectionId || deptId;
+          if (parentCol) {
+            const [cc] = await query(
+              `SELECT id FROM cost_centers WHERE name=? AND ${parentCol}=? LIMIT 1`,
+              [costCenter.trim(), parentId]
+            );
+            if (cc) {
+              costId = cc.id;
+            } else {
+              const r = await query(
+                `INSERT INTO cost_centers (name, ${parentCol}) VALUES (?, ?)`,
+                [costCenter.trim(), parentId]
+              );
+              costId = r.insertId;
+            }
+          }
         }
 
         // Kiểm tra đã có trong đợt chưa (theo qr_code)
@@ -533,9 +610,9 @@ router.post(
         if (!dev) {
           const devId = await transaction(async (conn) => {
             const [result] = await conn.query(
-              `INSERT INTO devices (name, qr_code, department_id, location, is_new)
-               VALUES (?, ?, ?, ?, 0)`,
-              [name || qr, qr, deptId || null, location || null]
+              `INSERT INTO devices (name, qr_code, department_id, section_id, group_id, cost_center_id, device_type_id, location, is_new)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+              [name || qr, qr, deptId || null, sectionId || null, groupId || null, costId || null, deviceTypeId || null, location || null]
             );
             return result.insertId;
           });
@@ -550,8 +627,10 @@ router.post(
 `INSERT INTO inventory_round_items
              (round_id, device_id, qr_code, serial_number, device_name,
               location, department_id, department_name,
-              section_name, group_name, cost_center_name, floor, device_type_name, audited)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+              section_id, section_name, group_id, group_name,
+              cost_center_id, cost_center_name,
+              floor, device_type_name, pic, audited)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
           [
             roundId,
             dev.id,
@@ -559,13 +638,17 @@ router.post(
             qr,
             name || qr,
             locationStr,
-            deptId || null,
-            deptName || null,
+            deptId      || null,
+            deptName    || null,
+            sectionId   || null,
             sectionName || null,
-            groupName || null,
-            costCenter || null,
+            groupId     || null,
+            groupName   || null,
+            costId      || null,
+            costCenter  || null,
             floor ? parseInt(floor) : null,
-            deviceType || null,
+            deviceType  || null,
+            pic         || null,
           ]
         );
         inserted++;

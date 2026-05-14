@@ -168,14 +168,28 @@ router.put('/layouts/:id/toggle-lock', async (req, res) => {
 // ── Device positions ───────────────────────────────────────────
 router.get('/devices/positions', async (req, res) => {
   try {
+    // Join với round active để biết trạng thái kiểm kê
     const rows = await query(`
       SELECT d.id, d.name, d.qr_code, d.floor, d.pos_x, d.pos_y,
              d.location, d.department_id, d.workshop_id,
              dt.name  AS device_type_name,
-             dep.name AS department_name
+             dep.name AS department_name,
+             -- Trạng thái kiểm kê từ round active
+             CASE
+               WHEN ri.audited = 1 THEN 'scanned'
+               WHEN ri.id IS NOT NULL THEN 'not_scanned'
+               ELSE 'no_round'
+             END AS inv_status,
+             ri.id AS round_item_id
       FROM   devices d
       LEFT JOIN device_types dt  ON dt.id  = d.device_type_id
       LEFT JOIN departments  dep ON dep.id = d.department_id
+      -- Join với round đang active
+      LEFT JOIN (
+        SELECT ir.id, ir.qr_code, ir.audited
+        FROM   inventory_round_items ir
+        INNER JOIN inventory_rounds r ON r.id = ir.round_id AND r.status = 'active'
+      ) ri ON ri.qr_code = d.qr_code
     `);
     res.json(rows);
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
